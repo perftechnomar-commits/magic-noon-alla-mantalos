@@ -2979,13 +2979,30 @@ def render_date_period_selector(
     custom_end = None
     if preset == "Custom Range":
         custom_key = f"{key}_custom_range"
-        existing = st.session_state.get(custom_key)
-        if not (isinstance(existing, tuple) and len(existing) == 2):
+        if custom_key not in st.session_state:
             st.session_state[custom_key] = (available_start, available_end)
-
+        existing = st.session_state.get(custom_key)
+        if isinstance(existing, (tuple, list)) and len(existing) == 2:
+            existing_start = max(
+                available_start,
+                min(existing[0], available_end),
+            )
+            existing_end = max(
+                available_start,
+                min(existing[1], available_end),
+            )
+        
+            if existing_start > existing_end:
+                existing_start, existing_end = available_start, available_end
+        
+            if tuple(existing) != (existing_start, existing_end):
+                st.session_state[custom_key] = (
+                    existing_start,
+                    existing_end,
+                )
+        
         custom_value = st.date_input(
             f"{label} custom dates",
-            value=st.session_state[custom_key],
             min_value=available_start,
             max_value=available_end,
             format=UI_DATE_INPUT_FORMAT,
