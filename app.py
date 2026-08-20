@@ -564,13 +564,13 @@ def apply_custom_css() -> None:
         }
 
         [data-baseweb="tag"] {
-            background: linear-gradient(135deg, rgba(255, 216, 74, 0.22), rgba(255, 176, 0, 0.14)) !important;
-            border: 1px solid rgba(255, 216, 74, 0.38) !important;
-            color: #FFF7CC !important;
+            background: linear-gradient(135deg, rgba(255, 216, 74, 0.98), rgba(255, 176, 0, 0.86)) !important;
+            border: 1px solid rgba(255, 216, 74, 0.45) !important;
+            color: #121008 !important;
             border-radius: 999px !important;
         }
-        [data-baseweb="tag"] span { color: #FFF7CC !important; }
-        [data-baseweb="tag"] svg { color: #FFF7CC !important; }
+        [data-baseweb="tag"] span { color: #121008 !important; }
+        [data-baseweb="tag"] svg { color: #121008 !important; }
 
         .dashboard-hero {
             padding: 1.35rem 1.55rem;
