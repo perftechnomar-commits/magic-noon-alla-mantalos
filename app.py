@@ -51,8 +51,6 @@ API_REQUEST_MAX_ATTEMPTS = 3
 ODATA_ENDPOINT = "https://online.marorka.com/Odata/v1/ODataService.svc/ReportData"
 MAX_ODATA_PAGES = 500
 API_CACHE_TTL_SECONDS = 21600  # 6 hours; KPI filters use local data and do not refetch.
-
-WARMUP_FORCE_REPLAY_GUARD_SECONDS = 900  # Ignore replayed force=1 requests for 15 minutes.
 UI_DATE_INPUT_FORMAT = "DD/MM/YYYY"
 DISPLAY_DATETIME_FORMAT = "%d/%m/%Y %H:%M"
 API_FULL_START_DATE = date(2026, 1, 1)
@@ -564,13 +562,13 @@ def apply_custom_css() -> None:
         }
 
         [data-baseweb="tag"] {
-            background: linear-gradient(135deg, rgba(255, 216, 74, 0.98), rgba(255, 176, 0, 0.86)) !important;
-            border: 1px solid rgba(255, 216, 74, 0.45) !important;
-            color: #121008 !important;
+            background: linear-gradient(135deg, rgba(255, 216, 74, 0.22), rgba(255, 176, 0, 0.14)) !important;
+            border: 1px solid rgba(255, 216, 74, 0.38) !important;
+            color: #FFF7CC !important;
             border-radius: 999px !important;
         }
-        [data-baseweb="tag"] span { color: #121008 !important; }
-        [data-baseweb="tag"] svg { color: #121008 !important; }
+        [data-baseweb="tag"] span { color: #FFF7CC !important; }
+        [data-baseweb="tag"] svg { color: #FFF7CC !important; }
 
         .dashboard-hero {
             padding: 1.35rem 1.55rem;
@@ -3325,32 +3323,6 @@ def read_snapshot_refresh_status() -> dict[str, Any] | None:
         return None
 
 
-def recent_successful_warmup_refresh(guard_seconds: int = WARMUP_FORCE_REPLAY_GUARD_SECONDS) -> bool:
-    """Return True when a forced warmup just completed successfully.
-
-    A long-running Streamlit tab can reconnect and execute the same URL again.
-    Because that URL still contains force=1, without this guard it can start a
-    second API refresh immediately after the first one has finished.
-    """
-    status = read_snapshot_refresh_status() or {}
-    if str(status.get("state", "")).lower() not in {"complete", "completed"}:
-        return False
-
-    completed_text = status.get("updated_at_utc")
-    if not completed_text:
-        return False
-
-    try:
-        completed_at = datetime.fromisoformat(str(completed_text).replace("Z", "+00:00"))
-    except (TypeError, ValueError):
-        return False
-
-    if completed_at.tzinfo is None:
-        completed_at = completed_at.replace(tzinfo=timezone.utc)
-    age_seconds = (datetime.now(timezone.utc) - completed_at.astimezone(timezone.utc)).total_seconds()
-    return 0 <= age_seconds <= max(int(guard_seconds), 0)
-
-
 def update_snapshot_refresh_status(**updates: Any) -> None:
     """Persist small refresh-progress metadata for overlapping requests/users."""
     payload = read_snapshot_refresh_status() or {}
@@ -3992,25 +3964,16 @@ def run_warmup_if_requested() -> None:
         st.stop()
 
     force_refresh = get_query_param("force", "0") == "1"
-    force_again = get_query_param("force_again", "0") == "1"
     full_refresh = get_query_param("full", "0") == "1"
     warmup_started_at = time.perf_counter()
     loaded_snapshot = None
     refresh_skipped_due_to_lock = False
-    replay_guard_applied = False
 
     raw_signature = request_signature(username, auth_method, API_FULL_START_DATE)
     prepared_signature = transform_signature(raw_signature)
 
     try:
-        if force_refresh and not force_again and recent_successful_warmup_refresh():
-            loaded_snapshot = load_prepared_snapshot(
-                raw_signature,
-                prepared_signature,
-            )
-            replay_guard_applied = loaded_snapshot is not None
-
-        if force_refresh and loaded_snapshot is None:
+        if force_refresh:
             with snapshot_refresh_lock() as lock_acquired:
                 if not lock_acquired:
                     # Never rebuild or call the API while another request owns the lock.
@@ -4047,7 +4010,7 @@ def run_warmup_if_requested() -> None:
                             auth_method,
                             full_refresh=full_refresh,
                         )
-        elif loaded_snapshot is None:
+        else:
             loaded_snapshot = load_prepared_snapshot(
                 raw_signature,
                 prepared_signature,
@@ -4101,10 +4064,7 @@ def run_warmup_if_requested() -> None:
         st.stop()
 
     prepared_df, metadata, manifest = loaded_snapshot
-    if replay_guard_applied:
-        st.success("Warmup OK. A recent successful refresh was reused; duplicate API refresh was prevented.")
-    else:
-        st.success("Warmup OK. Prepared snapshot is ready for users.")
+    st.success("Warmup OK. Prepared snapshot is ready for users.")
     st.write(
         {
             "snapshot_generation": manifest.get("generation"),
@@ -4116,9 +4076,7 @@ def run_warmup_if_requested() -> None:
             "refresh_api_start_date": metadata.get("refresh_api_start_date", "-"),
             "warmup_seconds": round(time.perf_counter() - warmup_started_at, 2),
             "force_refresh": force_refresh,
-            "force_again": force_again,
             "full_refresh": full_refresh,
-            "replay_guard_applied": replay_guard_applied,
             "refresh_skipped_due_to_lock": refresh_skipped_due_to_lock,
         }
     )
