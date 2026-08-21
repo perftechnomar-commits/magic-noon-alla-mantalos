@@ -22,6 +22,7 @@ import pandas as pd
 import requests
 import streamlit as st
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 try:
     import fcntl
@@ -2157,17 +2158,95 @@ def make_display_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def to_excel_bytes(df: pd.DataFrame) -> bytes:
+    """Export the selected dataset as an Excel-native formatted table.
+
+    All numeric values remain true Excel numbers. Calculated Slip and ME Load
+    remain true percentages. Datetimes are written as real Excel datetimes.
+    This keeps every export immediately usable for sorting, filtering, formulas
+    and pivots without a manual "Convert to Number" step.
+    """
     output = BytesIO()
     safe_df = df.copy()
+
+    datetime_columns: set[str] = set()
     for column in safe_df.columns:
         if pd.api.types.is_datetime64_any_dtype(safe_df[column]):
-            safe_df[column] = pd.to_datetime(safe_df[column], errors="coerce").dt.tz_localize(None)
+            safe_df[column] = pd.to_datetime(
+                safe_df[column], errors="coerce", utc=True
+            ).dt.tz_localize(None)
+            datetime_columns.add(column)
+
+    # Preserve identifiers/text as text, but make any remaining numeric-like
+    # columns genuine numbers before writing to Excel.
+    text_columns = {"ShipName", "ReportType", "StateName"}
+    id_columns = {"ReportId"}
+    percentage_columns = {"Calculated Slip", "ME Load [%MCR]"}
+
+    for column in safe_df.columns:
+        if column in datetime_columns or column in text_columns:
+            continue
+        numeric_values = pd.to_numeric(safe_df[column], errors="coerce")
+        if column in id_columns or column in percentage_columns or numeric_values.notna().any():
+            safe_df[column] = numeric_values
+
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        safe_df.to_excel(writer, index=False, sheet_name="Fleet Performance")
-        worksheet = writer.sheets["Fleet Performance"]
+        sheet_name = "Fleet Performance"
+        safe_df.to_excel(writer, index=False, sheet_name=sheet_name)
+        worksheet = writer.sheets[sheet_name]
+
+        # Use the same native Excel Table presentation as the KPI summary.
+        if not safe_df.empty and len(safe_df.columns) > 0:
+            from openpyxl.utils import get_column_letter
+
+            last_column_letter = get_column_letter(len(safe_df.columns))
+            last_row = len(safe_df) + 1
+            dataset_table = Table(
+                displayName="FleetPerformanceTable",
+                ref=f"A1:{last_column_letter}{last_row}",
+            )
+            dataset_table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleMedium12",
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False,
+            )
+            worksheet.add_table(dataset_table)
+
+        # Excel-native display formats. Values stay numeric underneath.
+        header_map = {cell.value: cell.column for cell in worksheet[1]}
+        for column_name, column_index in header_map.items():
+            if column_name is None:
+                continue
+            cells = worksheet.iter_rows(
+                min_row=2,
+                max_row=worksheet.max_row,
+                min_col=column_index,
+                max_col=column_index,
+            )
+            if column_name in percentage_columns:
+                for row_cells in cells:
+                    row_cells[0].number_format = "0.00%"
+            elif column_name in datetime_columns:
+                for row_cells in cells:
+                    row_cells[0].number_format = "dd/mm/yyyy hh:mm"
+            elif column_name in id_columns:
+                for row_cells in cells:
+                    row_cells[0].number_format = "0"
+            elif pd.api.types.is_numeric_dtype(safe_df[column_name]):
+                for row_cells in cells:
+                    row_cells[0].number_format = "#,##0.00"
+
+        worksheet.freeze_panes = "A2"
         for column_cells in worksheet.columns:
-            max_length = max(len(str(cell.value)) if cell.value is not None else 0 for cell in column_cells)
-            worksheet.column_dimensions[column_cells[0].column_letter].width = min(max(max_length + 2, 12), 45)
+            max_length = max(
+                len(str(cell.value)) if cell.value is not None else 0
+                for cell in column_cells
+            )
+            worksheet.column_dimensions[column_cells[0].column_letter].width = min(
+                max(max_length + 2, 12), 45
+            )
+
     return output.getvalue()
 
 
@@ -2314,6 +2393,22 @@ def to_kpi_excel_bytes(
             worksheet[f"D{row_idx}"].number_format = "0.00%"
             for column_letter in ["E", "F", "G", "H", "I"]:
                 worksheet[f"{column_letter}{row_idx}"].number_format = "#,##0.00"
+
+        # Make the selected KPI range a native Excel Table so users get filter
+        # arrows, banded rows and normal table behaviour directly on open.
+        if not kpi_df.empty:
+            kpi_table = Table(
+                displayName="KPIReportTable",
+                ref=f"A{header_row}:I{data_end_row}",
+            )
+            kpi_table.tableStyleInfo = TableStyleInfo(
+                name="TableStyleMedium12",
+                showFirstColumn=False,
+                showLastColumn=False,
+                showRowStripes=True,
+                showColumnStripes=False,
+            )
+            worksheet.add_table(kpi_table)
 
         filter_start_row = header_row + len(kpi_df) + 3
         worksheet[f"A{filter_start_row}"] = "KPI filters used"
