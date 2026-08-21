@@ -2267,13 +2267,16 @@ def to_kpi_excel_bytes(
             {
                 "Vessels included": vessel,
                 "Fleet": vessel_fleet_name(vessel),
-                "Average Calculated Slip": format_percentage(slip),
-                "Average ME Load [%MCR]": format_percentage(me_load),
-                "Average SFOC [g/kWh]": format_value(sfoc, 2),
-                "Boiler Sum": format_value(boiler, 2),
-                "MELO Consumption [ltr/running day]": format_value(melo_consumption_day, 2),
-                "CYLO SLOC [g/kWh]": format_value(cylo_sloc, 2),
-                "GELO Consumption [ltr/DG running day]": format_value(gelo_consumption_day, 2),
+                # Keep KPI values numeric in the workbook. Excel number formats
+                # below control how they are displayed, avoiding "number stored
+                # as text" warnings and preserving sorting/formulas.
+                "Average Calculated Slip": None if pd.isna(slip) else float(slip),
+                "Average ME Load [%MCR]": None if pd.isna(me_load) else float(me_load),
+                "Average SFOC [g/kWh]": None if pd.isna(sfoc) else float(sfoc),
+                "Boiler Sum": None if pd.isna(boiler) else float(boiler),
+                "MELO Consumption [ltr/running day]": None if pd.isna(melo_consumption_day) else float(melo_consumption_day),
+                "CYLO SLOC [g/kWh]": None if pd.isna(cylo_sloc) else float(cylo_sloc),
+                "GELO Consumption [ltr/DG running day]": None if pd.isna(gelo_consumption_day) else float(gelo_consumption_day),
             }
         )
 
@@ -2300,6 +2303,17 @@ def to_kpi_excel_bytes(
         header_row = 4
         for cell in worksheet[header_row]:
             cell.font = cell.font.copy(bold=True)
+
+        # Excel-native number formatting for the KPI table. Percentages remain
+        # true percentage values with exactly two decimals. All other KPI
+        # values remain true numbers with a thousands separator and two decimals.
+        data_start_row = header_row + 1
+        data_end_row = header_row + len(kpi_df)
+        for row_idx in range(data_start_row, data_end_row + 1):
+            worksheet[f"C{row_idx}"].number_format = "0.00%"
+            worksheet[f"D{row_idx}"].number_format = "0.00%"
+            for column_letter in ["E", "F", "G", "H", "I"]:
+                worksheet[f"{column_letter}{row_idx}"].number_format = "#,##0.00"
 
         filter_start_row = header_row + len(kpi_df) + 3
         worksheet[f"A{filter_start_row}"] = "KPI filters used"
