@@ -23,6 +23,7 @@ import requests
 import streamlit as st
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 from openpyxl.worksheet.table import Table, TableStyleInfo
+from openpyxl.styles import PatternFill, Font, Alignment
 
 try:
     import fcntl
@@ -2205,13 +2206,20 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
                 ref=f"A1:{last_column_letter}{last_row}",
             )
             dataset_table.tableStyleInfo = TableStyleInfo(
-                name="TableStyleMedium12",
+                name="TableStyleMedium2",
                 showFirstColumn=False,
                 showLastColumn=False,
-                showRowStripes=True,
+                showRowStripes=False,
                 showColumnStripes=False,
             )
             worksheet.add_table(dataset_table)
+            apply_fixed_gold_table_format(
+                worksheet,
+                header_row=1,
+                data_end_row=last_row,
+                min_col=1,
+                max_col=len(safe_df.columns),
+            )
 
         # Excel-native display formats. Values stay numeric underneath.
         header_map = {cell.value: cell.column for cell in worksheet[1]}
@@ -2248,6 +2256,28 @@ def to_excel_bytes(df: pd.DataFrame) -> bytes:
             )
 
     return output.getvalue()
+
+
+def apply_fixed_gold_table_format(worksheet, *, header_row: int, data_end_row: int, min_col: int, max_col: int) -> None:
+    """Apply a fixed gold/yellow Excel table appearance independent of workbook theme."""
+    header_fill = PatternFill("solid", fgColor="FFC000")
+    stripe_fill_1 = PatternFill("solid", fgColor="FFF2CC")
+    stripe_fill_2 = PatternFill("solid", fgColor="FFE699")
+    header_font = Font(color="FFFFFF", bold=True)
+    body_font = Font(color="000000")
+
+    for col_idx in range(min_col, max_col + 1):
+        cell = worksheet.cell(row=header_row, column=col_idx)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(vertical="center")
+
+    for row_idx in range(header_row + 1, data_end_row + 1):
+        fill = stripe_fill_1 if (row_idx - header_row) % 2 else stripe_fill_2
+        for col_idx in range(min_col, max_col + 1):
+            cell = worksheet.cell(row=row_idx, column=col_idx)
+            cell.fill = fill
+            cell.font = body_font
 
 
 def filter_specs_to_text(specs: list[dict[str, Any]]) -> list[str]:
@@ -2372,13 +2402,8 @@ def to_kpi_excel_bytes(
         worksheet["A2"] = f"API Period: {selected_start.strftime('%d/%m/%Y')} to {selected_end.strftime('%d/%m/%Y')}"
         worksheet["A2"].font = worksheet["A2"].font.copy(italic=True)
 
-        # Add a grouped KPI heading above the KPI value columns.
-        
-        worksheet["A3"].font = worksheet["A3"].font.copy(bold=True)
-        worksheet["C3"] = "KPIs"
-        worksheet["C3"].font = worksheet["C3"].font.copy(bold=True)
-        worksheet.merge_cells(start_row=3, start_column=3, end_row=3, end_column=9)
-
+        # Row 3 is intentionally left blank; the KPI table starts directly on row 4.
+        # No grouped "KPIs" heading is shown above Average Calculated Slip.
         header_row = 4
         for cell in worksheet[header_row]:
             cell.font = cell.font.copy(bold=True)
@@ -2402,13 +2427,20 @@ def to_kpi_excel_bytes(
                 ref=f"A{header_row}:I{data_end_row}",
             )
             kpi_table.tableStyleInfo = TableStyleInfo(
-                name="TableStyleMedium12",
+                name="TableStyleMedium2",
                 showFirstColumn=False,
                 showLastColumn=False,
-                showRowStripes=True,
+                showRowStripes=False,
                 showColumnStripes=False,
             )
             worksheet.add_table(kpi_table)
+            apply_fixed_gold_table_format(
+                worksheet,
+                header_row=header_row,
+                data_end_row=data_end_row,
+                min_col=1,
+                max_col=9,
+            )
 
         filter_start_row = header_row + len(kpi_df) + 3
         worksheet[f"A{filter_start_row}"] = "KPI filters used"
