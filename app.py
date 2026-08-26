@@ -4485,8 +4485,6 @@ def main() -> None:
                 file_name="kpi_summary_report.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
-        else:
-            st.caption("KPI Excel is prepared on demand so normal dashboard loads stay faster.")
 
         if (
             len(slip_kpi_df) != len(dashboard_df)
