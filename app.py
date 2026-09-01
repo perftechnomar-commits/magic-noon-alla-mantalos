@@ -3228,13 +3228,14 @@ def render_kpi_date_slicer(
     *,
     label: str,
     key: str,
+    default_preset: str = "All",
 ) -> tuple[pd.DataFrame, date, date]:
     return render_date_period_selector(
         df,
         label=label,
         key=key,
         count_label="filtered reports",
-        default_preset="All",
+        default_preset=default_preset,
     )
 
 
@@ -4430,6 +4431,7 @@ def main() -> None:
             boiler_kpi_base_df,
             label="Boiler Sum period",
             key="boiler_sum_kpi_period_slicer",
+            default_preset="YTD",
         )
 
     with st.sidebar.expander("Filtered Report Table Filters", expanded=False):
