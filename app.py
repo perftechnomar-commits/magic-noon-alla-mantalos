@@ -4421,11 +4421,13 @@ def main() -> None:
             performance_kpi_base_df,
             label="Average Calculated Slip period",
             key="calculated_slip_kpi_period_slicer",
+            default_preset="Previous Month",
         )
         me_sfoc_kpi_df, me_sfoc_start_date, me_sfoc_end_date = render_kpi_date_slicer(
             performance_kpi_base_df,
             label="Average ME Load / SFOC / Lub Oil period",
             key="me_load_sfoc_kpi_period_slicer",
+            default_preset="Previous 3 Months",
         )
         boiler_kpi_df, boiler_start_date, boiler_end_date = render_kpi_date_slicer(
             boiler_kpi_base_df,
