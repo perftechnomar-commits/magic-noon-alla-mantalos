@@ -3053,7 +3053,7 @@ def resolve_date_period(
     custom_start: date | None = None,
     custom_end: date | None = None,
 ) -> tuple[date, date]:
-    reference_date = min(date.today(), available_end)
+    reference_date = date.today()
 
     if preset == "Current Month":
         selected_start = _month_start(reference_date)
