@@ -3021,7 +3021,7 @@ def sidebar_controls() -> tuple[date, date, str, list[str], bool]:
 DATE_PERIOD_OPTIONS = [
     "Current Month",
     "Previous Month",
-    "Last 3 Months",
+    "Previous 3 Months",
     "YTD",
     "Last 7 Days",
     "Custom Range",
@@ -3053,6 +3053,15 @@ def resolve_date_period(
     custom_start: date | None = None,
     custom_end: date | None = None,
 ) -> tuple[date, date]:
+    """Resolve date presets against the real calendar.
+
+    Calendar presets are anchored to the actual current date, not to the latest
+    report date in the selected data. This means a short API/reporting lag does
+    not shorten Previous Month, Previous 3 Months, YTD, or Last 7 Days.
+
+    Custom Range and All remain tied to the dates actually present in the data.
+    Calendar presets are bounded only by API_FULL_START_DATE.
+    """
     reference_date = date.today()
 
     if preset == "Current Month":
@@ -3060,9 +3069,11 @@ def resolve_date_period(
         selected_end = reference_date
     elif preset == "Previous Month":
         selected_start, selected_end = _previous_month_bounds(reference_date)
-    elif preset == "Last 3 Months":
-        selected_start = _subtract_months_month_start(reference_date, 2)
-        selected_end = reference_date
+    elif preset in {"Previous 3 Months", "Last 3 Months"}:
+        # Three complete calendar months immediately before the current month.
+        current_month_start = _month_start(reference_date)
+        selected_end = current_month_start - timedelta(days=1)
+        selected_start = _subtract_months_month_start(current_month_start, 3)
     elif preset == "YTD":
         selected_start = date(reference_date.year, 1, 1)
         selected_end = reference_date
@@ -3072,13 +3083,17 @@ def resolve_date_period(
     elif preset == "Custom Range":
         selected_start = custom_start or available_start
         selected_end = custom_end or available_end
+        selected_start = max(available_start, min(selected_start, available_end))
+        selected_end = max(available_start, min(selected_end, available_end))
     else:
         selected_start, selected_end = available_start, available_end
 
-    selected_start = max(available_start, min(selected_start, available_end))
-    selected_end = max(available_start, min(selected_end, available_end))
+    if preset not in {"Custom Range", "All"}:
+        selected_start = max(API_FULL_START_DATE, selected_start)
+
     if selected_start > selected_end:
-        selected_start, selected_end = available_start, available_end
+        selected_start = selected_end
+
     return selected_start, selected_end
 
 
@@ -3108,6 +3123,9 @@ def render_date_period_selector(
     preset_key = f"{key}_preset"
     if preset_key not in st.session_state:
         st.session_state[preset_key] = default_preset
+    elif st.session_state.get(preset_key) == "Last 3 Months":
+        # Preserve existing browser sessions after the clearer preset rename.
+        st.session_state[preset_key] = "Previous 3 Months"
 
     preset = st.selectbox(
         f"{label} range",
@@ -4485,6 +4503,8 @@ def main() -> None:
                 file_name="kpi_summary_report.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
+        else:
+            st.caption("KPI Excel is prepared on demand so normal dashboard loads stay faster.")
 
         if (
             len(slip_kpi_df) != len(dashboard_df)
